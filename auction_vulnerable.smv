@@ -1,0 +1,55 @@
+-- ============================================================
+-- NuXmv Model: SimpleAuction (Vulnerable)
+-- File: auction_vulnerable.smv
+--
+-- Vulnerability: push refund in bid() reverts when highest bidder
+-- is an attacker contract. Once attacker is highest bidder,
+-- no further bids can succeed. Auction is permanently frozen.
+-- Expected result: FALSE with counterexample
+-- ============================================================
+
+MODULE main
+
+VAR
+  phase                      : {OPEN, ENDED};
+  highest_bidder             : {NONE, EOA, ATTACKER};
+  funds_recovered            : boolean;
+
+ASSIGN
+  init(phase)           := OPEN;
+  init(highest_bidder)  := NONE;
+  init(funds_recovered) := FALSE;
+
+  next(phase) :=
+    case
+      -- auctionEnd() callable only when OPEN and attacker is NOT highest bidder
+      phase = OPEN & highest_bidder != ATTACKER : {OPEN, ENDED};
+      -- Once attacker is highest bidder, auction is frozen: cannot end legitimately
+      phase = OPEN & highest_bidder = ATTACKER  : OPEN;
+      TRUE : phase;
+    esac;
+
+  next(highest_bidder) :=
+    case
+      -- Normal bidding: EOA or attacker can become highest bidder
+      phase = OPEN & highest_bidder = NONE : {EOA, ATTACKER};
+      -- EOA is outbid: next can be EOA or attacker
+      phase = OPEN & highest_bidder = EOA  : {EOA, ATTACKER};
+      -- Once attacker is highest bidder, bid() always reverts: stays ATTACKER
+      phase = OPEN & highest_bidder = ATTACKER : ATTACKER;
+      TRUE : highest_bidder;
+    esac;
+
+  next(funds_recovered) :=
+    case
+      -- Funds recovered only when auction ends with EOA as winner
+      phase = OPEN & highest_bidder != ATTACKER &
+        next(phase) = ENDED : TRUE;
+      TRUE : funds_recovered;
+    esac;
+
+-- ============================================================
+-- Property: while auction is open, funds must eventually be
+-- recoverable. FALSE because attacker freezes the auction.
+-- ============================================================
+SPEC AG (phase = OPEN -> EF (funds_recovered = TRUE))

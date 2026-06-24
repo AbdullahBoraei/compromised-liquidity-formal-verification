@@ -1,0 +1,46 @@
+-- ============================================================
+-- NuXmv Model: SimpleAuction (Patched)
+-- File: auction_patched.smv
+--
+-- Fix: pull-over-push. Bidders withdraw independently.
+-- Attacker's reverting fallback cannot block other withdrawals.
+-- Expected result: TRUE
+-- ============================================================
+
+MODULE main
+
+VAR
+  phase            : {OPEN, ENDED};
+  has_pending      : boolean;
+  withdraw_success : boolean;
+
+ASSIGN
+  init(phase)            := OPEN;
+  init(has_pending)      := FALSE;
+  init(withdraw_success) := FALSE;
+
+  next(phase) :=
+    case
+      phase = OPEN : {OPEN, ENDED};
+      TRUE : phase;
+    esac;
+
+  next(has_pending) :=
+    case
+      phase = OPEN                 : {FALSE, TRUE};
+      has_pending & withdraw_success : FALSE;
+      TRUE : has_pending;
+    esac;
+
+  next(withdraw_success) :=
+    case
+      -- withdraw() always succeeds regardless of caller type
+      has_pending : TRUE;
+      TRUE        : FALSE;
+    esac;
+
+-- ============================================================
+-- Property: any pending return can always be withdrawn.
+-- Expected result: TRUE
+-- ============================================================
+SPEC AG (has_pending = TRUE -> EF (withdraw_success = TRUE))

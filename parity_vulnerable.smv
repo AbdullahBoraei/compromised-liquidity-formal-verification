@@ -1,0 +1,69 @@
+-- ============================================================
+-- NuXmv Model: Parity WalletLibrary (Vulnerable)
+-- File: parity_vulnerable.smv
+--
+-- Two CTL properties:
+-- Property 1: AG(EF(xfer)) — funds always eventually transferable
+--             Expected: FALSE (DEAD state is reachable)
+-- Property 2: AG(dead -> AG(!xfer)) — once dead, never transferable
+--             Expected: TRUE (confirms the vulnerability)
+-- ============================================================
+
+MODULE main
+
+VAR
+  library_state    : {UNINITIALIZED, INITIALIZED, DEAD};
+  attacker_owner   : boolean;
+  wallet_active    : boolean;
+  funds_transferred : boolean;
+
+ASSIGN
+  init(library_state)     := UNINITIALIZED;
+  init(attacker_owner)    := FALSE;
+  init(wallet_active)     := TRUE;
+  init(funds_transferred) := FALSE;
+
+  next(library_state) :=
+    case
+      -- initWallet(): any caller can initialize (BUG: no guard)
+      library_state = UNINITIALIZED : INITIALIZED;
+      -- kill(): attacker is now owner, can destroy library
+      library_state = INITIALIZED & attacker_owner  : DEAD;
+      library_state = INITIALIZED & !attacker_owner : INITIALIZED;
+      library_state = DEAD : DEAD;
+      TRUE : library_state;
+    esac;
+
+  next(attacker_owner) :=
+    case
+      library_state = UNINITIALIZED : TRUE;
+      TRUE : attacker_owner;
+    esac;
+
+  next(wallet_active) :=
+    case
+      next(library_state) = DEAD : FALSE;
+      TRUE : wallet_active;
+    esac;
+
+  next(funds_transferred) :=
+    case
+      -- execute() works only when library is live
+      wallet_active & library_state = INITIALIZED &
+        next(library_state) = INITIALIZED : TRUE;
+      -- Once DEAD, delegatecall is no-op: transfers impossible
+      next(library_state) = DEAD : FALSE;
+      TRUE : funds_transferred;
+    esac;
+
+-- ============================================================
+-- Property 1: funds should always eventually be transferable.
+-- Expected: FALSE — attacker can reach DEAD, blocking forever.
+-- ============================================================
+SPEC AG (EF (funds_transferred = TRUE))
+
+-- ============================================================
+-- Property 2: once library is DEAD, funds can never transfer.
+-- Expected: TRUE — confirms the permanent locking vulnerability.
+-- ============================================================
+SPEC AG (library_state = DEAD -> AG (funds_transferred = FALSE))

@@ -1,0 +1,50 @@
+-- ============================================================
+-- NuXmv Model: King of the Ether Throne (Patched)
+-- File: kotet_patched.smv
+--
+-- Fix: pull-over-push. Compensation credited to pendingWithdrawals.
+-- withdraw() always enabled for any pending balance.
+-- Expected result: TRUE
+-- ============================================================
+
+MODULE main
+
+VAR
+  king_type        : {NONE, EOA, CONTRACT};
+  has_pending      : boolean;
+  withdraw_success : boolean;
+
+ASSIGN
+  init(king_type)        := NONE;
+  init(has_pending)      := FALSE;
+  init(withdraw_success) := FALSE;
+
+  next(king_type) :=
+    case
+      king_type = NONE     : {EOA, CONTRACT};
+      king_type = EOA      : {EOA, CONTRACT};
+      king_type = CONTRACT : {EOA, CONTRACT};
+      TRUE : king_type;
+    esac;
+
+  next(has_pending) :=
+    case
+      -- Any king being replaced creates a pending withdrawal
+      king_type != NONE & !withdraw_success : TRUE;
+      -- withdraw() clears the pending balance
+      withdraw_success                      : FALSE;
+      TRUE : has_pending;
+    esac;
+
+  next(withdraw_success) :=
+    case
+      -- withdraw() always succeeds regardless of caller type (pull pattern)
+      has_pending : TRUE;
+      TRUE        : FALSE;
+    esac;
+
+-- ============================================================
+-- Property: any pending withdrawal can always be completed.
+-- Expected result: TRUE
+-- ============================================================
+SPEC AG (has_pending = TRUE -> EF (withdraw_success = TRUE))

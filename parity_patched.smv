@@ -1,0 +1,47 @@
+-- ============================================================
+-- NuXmv Model: Parity WalletLibrary (Patched)
+-- File: parity_patched.smv
+--
+-- Fix: library initialized in constructor; initWallet() blocked
+-- by require(!initialized). DEAD state is unreachable.
+-- Expected result: TRUE
+-- ============================================================
+
+MODULE main
+
+VAR
+  library_state    : {INITIALIZED, DEAD};
+  wallet_active    : boolean;
+  funds_transferred : boolean;
+
+ASSIGN
+  -- Library starts INITIALIZED: constructor sets this immediately
+  init(library_state)    := INITIALIZED;
+  init(wallet_active)    := TRUE;
+  init(funds_transferred) := FALSE;
+
+  next(library_state) :=
+    case
+      -- kill() unreachable: no external caller can become owner
+      -- because initWallet() is blocked by require(!initialized)
+      library_state = INITIALIZED : INITIALIZED;
+      TRUE : library_state;
+    esac;
+
+  next(wallet_active) :=
+    case
+      library_state = DEAD : FALSE;
+      TRUE : wallet_active;
+    esac;
+
+  next(funds_transferred) :=
+    case
+      wallet_active & library_state = INITIALIZED : TRUE;
+      TRUE : FALSE;
+    esac;
+
+-- ============================================================
+-- Property: funds are always eventually transferable.
+-- Expected result: TRUE (DEAD is unreachable; execute() always works)
+-- ============================================================
+SPEC AG (EF (funds_transferred = TRUE))

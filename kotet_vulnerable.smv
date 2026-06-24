@@ -1,0 +1,48 @@
+-- ============================================================
+-- NuXmv Model: King of the Ether Throne (Vulnerable)
+-- File: kotet_vulnerable.smv
+--
+-- Vulnerability: when a CONTRACT wallet is outgoing king,
+-- send() fails silently. The owed compensation is permanently
+-- lost with no withdrawal mechanism to recover it.
+--
+-- debt_outstanding becomes TRUE when a CONTRACT king is
+-- dethroned and can NEVER be cleared (no pull-withdrawal).
+-- Expected result: FALSE with counterexample
+-- ============================================================
+
+MODULE main
+
+VAR
+  king_type        : {NONE, EOA, CONTRACT};
+  debt_outstanding : boolean;
+
+ASSIGN
+  init(king_type)        := NONE;
+  init(debt_outstanding) := FALSE;
+
+  next(king_type) :=
+    case
+      king_type = NONE     : {EOA, CONTRACT};
+      king_type = EOA      : {EOA, CONTRACT};
+      king_type = CONTRACT : {EOA, CONTRACT};
+      TRUE : king_type;
+    esac;
+
+  next(debt_outstanding) :=
+    case
+      -- CONTRACT king dethroned: send() fails, debt created, never clearable
+      king_type = CONTRACT : TRUE;
+      -- Once debt exists, it stays forever (no withdrawal function)
+      debt_outstanding     : TRUE;
+      -- EOA king dethroned: send() succeeds, no debt
+      king_type = EOA      : FALSE;
+      TRUE : debt_outstanding;
+    esac;
+
+-- ============================================================
+-- Property: there must never be a permanently outstanding debt.
+-- Once debt_outstanding = TRUE it can never become FALSE.
+-- Expected result: FALSE — debt is reachable and permanent.
+-- ============================================================
+SPEC AG (debt_outstanding = TRUE -> EF (debt_outstanding = FALSE))
